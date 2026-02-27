@@ -1,0 +1,14 @@
+# 用户打新配置
+# AI 首次询问后会自动保存到 user-profile.yaml
+
+# 打新本金（港元）
+capital: 22000
+
+# 风险偏好: conservative / balanced / aggressive
+risk: conservative
+
+# 孖展偏好: never / cautious / active
+margin: never
+
+# 券商
+broker: longbridge

@@ -1,4 +1,4 @@
 __pycache__/
 *.pyc
 .DS_Store
-config/user-profile.yaml
+**/user-profile.yaml
