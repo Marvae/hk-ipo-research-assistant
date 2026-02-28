@@ -84,6 +84,103 @@ def _interpret_hsi_change(change_pct: float) -> str:
         return "大跌，市场恐慌"
 
 
+def get_all_sponsors() -> dict:
+    """Get all available sponsors from AASTOCKS dropdown.
+    
+    Returns:
+        dict mapping sponsor name to sponsor id
+    """
+    if requests is None or BeautifulSoup is None:
+        return {}
+    
+    url = "http://www.aastocks.com/sc/stocks/market/ipo/sponsor.aspx"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"}
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        resp.encoding = 'utf-8'
+        
+        soup = BeautifulSoup(resp.text, 'lxml')
+        select = soup.find('select', {'id': 'cp_ddlSponsor'})
+        if not select:
+            return {}
+        
+        sponsors = {}
+        for option in select.find_all('option'):
+            value = option.get('value', '')
+            name = option.get_text(strip=True)
+            if value and name and name != '所有保荐人':
+                sponsors[name] = value
+        return sponsors
+    except Exception:
+        return {}
+
+
+def get_sponsor_detail(sponsor_id: str) -> Optional[dict]:
+    """Get detailed stats for a specific sponsor by ID.
+    
+    Args:
+        sponsor_id: The sponsor ID from AASTOCKS
+        
+    Returns:
+        dict with sponsor stats or None
+    """
+    if requests is None or BeautifulSoup is None:
+        return None
+    
+    url = f"http://www.aastocks.com/sc/stocks/market/ipo/sponsor.aspx?s=1&o=&s2=0&o2=0&f1={sponsor_id}&f2=&page=1"
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"}
+    
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        resp.encoding = 'utf-8'
+        
+        soup = BeautifulSoup(resp.text, 'lxml')
+        
+        # Get IPO list for this sponsor
+        table = soup.find('table', {'id': 'tblData'})
+        if not table:
+            return None
+        
+        tbody = table.find('tbody')
+        if not tbody:
+            return None
+        
+        rows = tbody.find_all('tr')
+        ipo_count = len(rows)
+        up_count = 0
+        down_count = 0
+        first_day_returns = []
+        
+        for row in rows:
+            cells = row.find_all('td')
+            if len(cells) >= 6:
+                # Column 5 is first day performance
+                perf_text = cells[5].get_text(strip=True)
+                perf = _parse_pct(perf_text)
+                if perf is not None:
+                    first_day_returns.append(perf)
+                    if perf > 0:
+                        up_count += 1
+                    elif perf < 0:
+                        down_count += 1
+        
+        avg_first_day = round(sum(first_day_returns) / len(first_day_returns), 2) if first_day_returns else 0
+        win_rate = round(up_count / ipo_count * 100, 1) if ipo_count > 0 else 0
+        
+        return {
+            "ipo_count": ipo_count,
+            "up_count": up_count,
+            "down_count": down_count,
+            "avg_first_day": avg_first_day,
+            "win_rate": win_rate
+        }
+    except Exception:
+        return None
+
+
 def get_sponsor_history() -> list[dict]:
     """Get sponsor historical IPO performance from AASTOCKS.
     
@@ -171,12 +268,82 @@ def _parse_pct(s: str) -> Optional[float]:
         return None
 
 
+def _normalize_sponsor_name(name: str) -> str:
+    """Normalize sponsor name for matching (simplified Chinese, remove suffixes)."""
+    # Common traditional -> simplified mappings for sponsor names
+    t2s = {
+        '證': '证', '國': '国', '際': '际', '銀': '银', '華': '华',
+        '東': '东', '業': '业', '資': '资', '產': '产', '開': '开',
+        '發': '发', '創': '创', '亞': '亚', '萬': '万', '廣': '广',
+        '進': '进', '達': '达', '馬': '马', '財': '财', '貿': '贸',
+        '實': '实', '電': '电', '訊': '讯', '對': '对', '環': '环',
+        '聯': '联', '網': '网', '點': '点', '無': '无', '與': '与',
+    }
+    result = name
+    for t, s in t2s.items():
+        result = result.replace(t, s)
+    # Remove common suffixes
+    for suffix in ['有限公司', '有限责任公司', '股份有限公司']:
+        result = result.replace(suffix, '')
+    return result.strip().lower()
+
+
 def search_sponsor(sponsors: list[dict], name: str) -> Optional[dict]:
-    """Find a sponsor by name (partial match)."""
-    name_lower = name.lower()
+    """Find a sponsor by name (partial match, handles traditional/simplified Chinese).
+    
+    First tries to match in the top 10 list, then falls back to full sponsor lookup.
+    """
+    name_normalized = _normalize_sponsor_name(name)
+    
+    # Try matching in provided list first
     for s in sponsors:
-        if name_lower in s.get("name", "").lower():
+        sponsor_normalized = _normalize_sponsor_name(s.get("name", ""))
+        if name_normalized in sponsor_normalized or sponsor_normalized in name_normalized:
             return s
+    
+    # Fallback: try extracting key words from top 10
+    key_words = ['招商', '中信', '华泰', '高盛', '摩根', '瑞银', '海通', '国泰', '建银', '招银', '中金', '德意志']
+    for kw in key_words:
+        if kw in name:
+            for s in sponsors:
+                if kw in s.get("name", ""):
+                    return s
+    
+    # Still not found? Try full sponsor list from AASTOCKS
+    all_sponsors = get_all_sponsors()
+    for sponsor_name, sponsor_id in all_sponsors.items():
+        sponsor_normalized = _normalize_sponsor_name(sponsor_name)
+        if name_normalized in sponsor_normalized or sponsor_normalized in name_normalized:
+            # Found! Get detailed stats
+            detail = get_sponsor_detail(sponsor_id)
+            if detail:
+                return {
+                    "name": sponsor_name,
+                    **detail,
+                    "avg_cumulative": None,
+                    "best_stock": "N/A",
+                    "best_return": None,
+                    "worst_stock": "N/A", 
+                    "worst_return": None,
+                }
+    
+    # Try keyword match in full list
+    for kw in key_words:
+        if kw in name:
+            for sponsor_name, sponsor_id in all_sponsors.items():
+                if kw in sponsor_name:
+                    detail = get_sponsor_detail(sponsor_id)
+                    if detail:
+                        return {
+                            "name": sponsor_name,
+                            **detail,
+                            "avg_cumulative": None,
+                            "best_stock": "N/A",
+                            "best_return": None,
+                            "worst_stock": "N/A",
+                            "worst_return": None,
+                        }
+    
     return None
 
 
