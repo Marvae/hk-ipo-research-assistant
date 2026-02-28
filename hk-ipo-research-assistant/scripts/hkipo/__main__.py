@@ -12,7 +12,6 @@
     allotment   - 中签率预测
     odds        - 中签率表格（不同超购×不同手数）
     calendar    - 资金日历（踩踏/释放规划）
-    twitter     - Twitter 情绪搜索
     ah          - A+H 折价计算
     hkex        - 港交所披露易（招股书）
 
@@ -135,10 +134,6 @@ def main():
     elif module == 'allotment':
         from allotment import main as allotment_main
         allotment_main(remaining_args)
-    
-    elif module == 'twitter':
-        from twitter import main as twitter_main
-        twitter_main(remaining_args)
     
     elif module == 'ah':
         # A+H 折价计算
@@ -443,7 +438,7 @@ def main():
     
     else:
         print(f"未知模块: {module}")
-        print(f"可用模块: aipo, jisilu, futu, tradesmart, allotment, twitter, ah, hkex, analyze, profile")
+        print(f"可用模块: aipo, jisilu, futu, tradesmart, allotment, ah, hkex, analyze, profile")
         sys.exit(1)
 
 

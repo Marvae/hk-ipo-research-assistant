@@ -93,9 +93,13 @@ cd <skill_dir>
 | 命令 | 说明 |
 |------|------|
 | `hkex active` | 港交所活跃申请（含招股书链接） |
-| `twitter "股票名"` | Twitter 社区情绪 |
 | `tradesmart list` | TradeSmart 数据 |
 | `futu list` | 富途历史数据 |
+
+### 市场情绪判断
+- **孖展金额**（`margin-list`）：>50亿 热门，>100亿 爆款
+- **超购倍数预测**（`margin-detail` 的 `oversubscription_forecast`）
+- **历史参考**（`jisilu list`）：同保荐人/同行业的首日表现
 
 ## 输出格式
 

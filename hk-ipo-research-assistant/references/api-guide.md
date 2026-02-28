@@ -123,18 +123,10 @@ python3 cli.py fetch detail <code>
 - 基石投资者列表
 - 公开发售股数
 
-## 8. Twitter 情绪（twitter.py）
-
-```bash
-python3 hkipo/twitter.py "泡泡玛特"
-```
-
-**输出**：KOL 讨论、看法分布、市场情绪
-
 ## CLI 完整命令
 
 ```bash
-cd ~/Projects/hk-ipo-research-assistant/scripts
+cd scripts
 PYTHONPATH=. python3 cli.py <command>
 ```
 
@@ -165,4 +157,3 @@ python3 hkipo/cache.py --test    # 测试缓存性能
 | 已上市历史 | 永久 | 不会变 |
 | 活跃 IPO 列表 | 24 小时 | 每日更新 |
 | 单只详情 | 24 小时 | 每日更新 |
-| Twitter 情绪 | 不缓存 | 实时性要求高 |

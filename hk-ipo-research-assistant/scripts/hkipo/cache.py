@@ -14,7 +14,7 @@
    - details/{code}.json — 单只详情
 
 4. 不缓存
-   - 实时孖展、Twitter
+   - 实时孖展
 """
 
 from __future__ import annotations

@@ -17,6 +17,11 @@
 
 把链接丢给你的 agent：`https://github.com/Marvae/hk-ipo-research-assistant`
 
+或使用 ClawHub：
+```bash
+clawhub install hk-ipo-research-assistant
+```
+
 **手动**
 
 ```bash
