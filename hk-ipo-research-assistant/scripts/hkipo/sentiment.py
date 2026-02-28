@@ -295,21 +295,13 @@ def search_sponsor(sponsors: list[dict], name: str) -> Optional[dict]:
     """
     name_normalized = _normalize_sponsor_name(name)
     
-    # Try matching in provided list first
+    # Try matching in provided list first (top 10 from summary)
     for s in sponsors:
         sponsor_normalized = _normalize_sponsor_name(s.get("name", ""))
         if name_normalized in sponsor_normalized or sponsor_normalized in name_normalized:
             return s
     
-    # Fallback: try extracting key words from top 10
-    key_words = ['招商', '中信', '华泰', '高盛', '摩根', '瑞银', '海通', '国泰', '建银', '招银', '中金', '德意志']
-    for kw in key_words:
-        if kw in name:
-            for s in sponsors:
-                if kw in s.get("name", ""):
-                    return s
-    
-    # Still not found? Try full sponsor list from AASTOCKS
+    # Not in top 10? Try full sponsor list from AASTOCKS
     all_sponsors = get_all_sponsors()
     for sponsor_name, sponsor_id in all_sponsors.items():
         sponsor_normalized = _normalize_sponsor_name(sponsor_name)
@@ -326,23 +318,6 @@ def search_sponsor(sponsors: list[dict], name: str) -> Optional[dict]:
                     "worst_stock": "N/A", 
                     "worst_return": None,
                 }
-    
-    # Try keyword match in full list
-    for kw in key_words:
-        if kw in name:
-            for sponsor_name, sponsor_id in all_sponsors.items():
-                if kw in sponsor_name:
-                    detail = get_sponsor_detail(sponsor_id)
-                    if detail:
-                        return {
-                            "name": sponsor_name,
-                            **detail,
-                            "avg_cumulative": None,
-                            "best_stock": "N/A",
-                            "best_return": None,
-                            "worst_stock": "N/A",
-                            "worst_return": None,
-                        }
     
     return None
 
