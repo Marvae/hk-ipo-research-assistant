@@ -39,7 +39,7 @@ def search_a_share_code(company_name: str) -> str | None:
                 code = f"{m.group(1)}{m.group(2)}"
                 _a_share_cache[company_name] = code
                 return code
-        except Exception:
+        except (httpx.HTTPError, ValueError, AttributeError):
             pass
 
     _a_share_cache[company_name] = None
@@ -53,7 +53,7 @@ def fetch_a_share_price(a_code: str) -> float:
         parts = resp.text.split("~")
         if len(parts) > 3:
             return float(parts[3])
-    except Exception:
+    except (httpx.HTTPError, ValueError, IndexError):
         pass
     return 0
 

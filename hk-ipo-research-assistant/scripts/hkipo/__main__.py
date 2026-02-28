@@ -74,7 +74,7 @@ def show_overview():
                     min_cap = brief.get('minimum_capital', 0) if isinstance(brief, dict) else getattr(brief, 'minimum_capital', 0)
                     pe = brief.get('pe', 0) if isinstance(brief, dict) else getattr(brief, 'pe', 0)
                     industry = brief.get('industry', '') if isinstance(brief, dict) else getattr(brief, 'industry', '')
-            except Exception:
+            except (KeyError, TypeError, AttributeError):
                 pass
             
             print(f"\n📈 {name} ({code})")

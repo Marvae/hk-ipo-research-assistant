@@ -88,7 +88,7 @@ def _write_atomic(path: Path, data: dict) -> None:
         
         # 原子替换
         os.replace(tmp_path, path)
-    except Exception:
+    except (OSError, IOError):
         # 清理临时文件
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
