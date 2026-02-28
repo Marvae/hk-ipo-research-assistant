@@ -1,7 +1,7 @@
 """Market sentiment data sources.
 
 Provides market sentiment indicators for HK IPO analysis:
-- VHSI (HSI Volatility Index) - market fear gauge
+- HSI (Hang Seng Index) - market sentiment gauge
 - Sponsor historical performance from AASTOCKS
 """
 
@@ -11,44 +11,59 @@ from typing import Optional
 
 try:
     import requests
+    from requests.exceptions import RequestException, Timeout, ConnectionError as ReqConnectionError
     from bs4 import BeautifulSoup
 except ImportError:
     requests = None
+    RequestException = Exception
+    Timeout = Exception
+    ReqConnectionError = Exception
     BeautifulSoup = None
 
 
-def get_vhsi() -> dict:
+# Constants
+AASTOCKS_BASE_URL = "https://www.aastocks.com"
+YAHOO_FINANCE_URL = "https://query1.finance.yahoo.com/v8/finance/chart/^HSI"
+DEFAULT_TIMEOUT = 15
+USER_AGENT = "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"
+
+
+def _fmt(value: Optional[float], decimals: int = 2) -> str:
+    """Format numeric value, return 'N/A' if None."""
+    if value is None or not isinstance(value, (int, float)):
+        return "N/A"
+    return f"{value:.{decimals}f}"
+
+
+def get_hsi() -> dict:
     """Get market sentiment via HSI (Hang Seng Index) data.
     
-    Note: VHSI is not available on Yahoo Finance. 
-    We use HSI price movement as a proxy for market sentiment.
-    
     Returns:
-        dict with keys: hsi, change, change_pct, interpretation
-        
-    Interpretation based on recent movement:
-        Strong rally (>2%): Bullish sentiment
-        Mild up (0-2%): Neutral-positive
-        Flat (-1% to 0%): Neutral
-        Decline (<-1%): Risk-off sentiment
-        Sharp drop (<-3%): Panic
+        dict with keys: index, price, change, change_pct, interpretation
+        On error: {"error": "message"}
     """
     if requests is None:
-        return {"error": "requests not installed"}
+        return {"error": "requests library not installed"}
     
-    url = "https://query1.finance.yahoo.com/v8/finance/chart/^HSI"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"}
+    headers = {"User-Agent": USER_AGENT}
     
     try:
-        resp = requests.get(url, headers=headers, timeout=10)
+        resp = requests.get(YAHOO_FINANCE_URL, headers=headers, timeout=DEFAULT_TIMEOUT)
         resp.raise_for_status()
         data = resp.json()
         
-        result = data["chart"]["result"][0]
-        meta = result["meta"]
+        result = data.get("chart", {}).get("result", [])
+        if not result:
+            return {"error": "No data returned from Yahoo Finance"}
         
-        price = meta.get("regularMarketPrice", 0)
-        prev_close = meta.get("previousClose", 0)
+        meta = result[0].get("meta", {})
+        
+        price = meta.get("regularMarketPrice")
+        prev_close = meta.get("previousClose")
+        
+        if price is None or prev_close is None:
+            return {"error": "Missing price data"}
+        
         change = round(price - prev_close, 2)
         change_pct = round((price / prev_close - 1) * 100, 2) if prev_close else 0
         
@@ -64,8 +79,18 @@ def get_vhsi() -> dict:
             "52w_low": meta.get("fiftyTwoWeekLow"),
             "interpretation": _interpret_hsi_change(change_pct)
         }
-    except Exception as e:
-        return {"error": str(e)}
+    except Timeout:
+        return {"error": "Request timed out"}
+    except ReqConnectionError:
+        return {"error": "Connection failed"}
+    except RequestException as e:
+        return {"error": f"Request failed: {e}"}
+    except (KeyError, ValueError, TypeError) as e:
+        return {"error": f"Parse error: {e}"}
+
+
+# Alias for backward compatibility
+get_vhsi = get_hsi
 
 
 def _interpret_hsi_change(change_pct: float) -> str:
@@ -84,20 +109,20 @@ def _interpret_hsi_change(change_pct: float) -> str:
         return "大跌，市场恐慌"
 
 
-def get_all_sponsors() -> dict:
+def get_all_sponsors() -> dict[str, str]:
     """Get all available sponsors from AASTOCKS dropdown.
     
     Returns:
-        dict mapping sponsor name to sponsor id
+        dict mapping sponsor name to sponsor id, empty dict on error
     """
     if requests is None or BeautifulSoup is None:
         return {}
     
-    url = "http://www.aastocks.com/sc/stocks/market/ipo/sponsor.aspx"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"}
+    url = f"{AASTOCKS_BASE_URL}/sc/stocks/market/ipo/sponsor.aspx"
+    headers = {"User-Agent": USER_AGENT}
     
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
         resp.raise_for_status()
         resp.encoding = 'utf-8'
         
@@ -110,10 +135,10 @@ def get_all_sponsors() -> dict:
         for option in select.find_all('option'):
             value = option.get('value', '')
             name = option.get_text(strip=True)
-            if value and name and name != '所有保荐人':
+            if value and value.isdigit() and name and name != '所有保荐人':
                 sponsors[name] = value
         return sponsors
-    except Exception:
+    except (RequestException, ValueError, AttributeError):
         return {}
 
 
@@ -121,25 +146,29 @@ def get_sponsor_detail(sponsor_id: str) -> Optional[dict]:
     """Get detailed stats for a specific sponsor by ID.
     
     Args:
-        sponsor_id: The sponsor ID from AASTOCKS
+        sponsor_id: The sponsor ID from AASTOCKS (must be numeric)
         
     Returns:
-        dict with sponsor stats or None
+        dict with sponsor stats or None on error
     """
     if requests is None or BeautifulSoup is None:
         return None
     
-    url = f"http://www.aastocks.com/sc/stocks/market/ipo/sponsor.aspx?s=1&o=&s2=0&o2=0&f1={sponsor_id}&f2=&page=1"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"}
+    # Validate sponsor_id to prevent injection
+    if not sponsor_id or not sponsor_id.isdigit():
+        return None
+    
+    url = f"{AASTOCKS_BASE_URL}/sc/stocks/market/ipo/sponsor.aspx"
+    params = {"s": "1", "o": "", "s2": "0", "o2": "0", "f1": sponsor_id, "f2": "", "page": "1"}
+    headers = {"User-Agent": USER_AGENT}
     
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, params=params, headers=headers, timeout=DEFAULT_TIMEOUT)
         resp.raise_for_status()
         resp.encoding = 'utf-8'
         
         soup = BeautifulSoup(resp.text, 'lxml')
         
-        # Get IPO list for this sponsor
         table = soup.find('table', {'id': 'tblData'})
         if not table:
             return None
@@ -149,15 +178,16 @@ def get_sponsor_detail(sponsor_id: str) -> Optional[dict]:
             return None
         
         rows = tbody.find_all('tr')
-        ipo_count = len(rows)
+        if not rows:
+            return None
+            
         up_count = 0
         down_count = 0
-        first_day_returns = []
+        first_day_returns: list[float] = []
         
         for row in rows:
             cells = row.find_all('td')
             if len(cells) >= 6:
-                # Column 5 is first day performance
                 perf_text = cells[5].get_text(strip=True)
                 perf = _parse_pct(perf_text)
                 if perf is not None:
@@ -167,67 +197,63 @@ def get_sponsor_detail(sponsor_id: str) -> Optional[dict]:
                     elif perf < 0:
                         down_count += 1
         
-        avg_first_day = round(sum(first_day_returns) / len(first_day_returns), 2) if first_day_returns else 0
-        win_rate = round(up_count / ipo_count * 100, 1) if ipo_count > 0 else 0
+        valid_count = len(first_day_returns)
+        avg_first_day = round(sum(first_day_returns) / valid_count, 2) if valid_count > 0 else 0
+        win_rate = round(up_count / valid_count * 100, 1) if valid_count > 0 else 0
         
         return {
-            "ipo_count": ipo_count,
+            "ipo_count": len(rows),
+            "valid_count": valid_count,
             "up_count": up_count,
             "down_count": down_count,
             "avg_first_day": avg_first_day,
             "win_rate": win_rate
         }
-    except Exception:
+    except (RequestException, ValueError, AttributeError):
         return None
 
 
 def get_sponsor_history() -> list[dict]:
-    """Get sponsor historical IPO performance from AASTOCKS.
+    """Get sponsor historical IPO performance from AASTOCKS (top 10).
     
     Returns:
-        List of dicts with sponsor performance data:
-        - name: Sponsor name
-        - ipo_count: Number of IPOs
-        - up_count: Number that went up on first day
-        - down_count: Number that went down
-        - avg_first_day: Average first day return %
-        - avg_cumulative: Average cumulative return %
-        - best_stock: Best performing stock
-        - worst_stock: Worst performing stock
+        List of dicts with sponsor performance data, or [{"error": "..."}] on error
     """
     if requests is None or BeautifulSoup is None:
         return [{"error": "requests or beautifulsoup4 not installed"}]
     
-    url = "http://www.aastocks.com/sc/stocks/market/ipo/sponsor.aspx"
-    headers = {"User-Agent": "Mozilla/5.0 (compatible; HKIPOResearch/1.0)"}
+    url = f"{AASTOCKS_BASE_URL}/sc/stocks/market/ipo/sponsor.aspx"
+    headers = {"User-Agent": USER_AGENT}
     
     try:
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
         resp.raise_for_status()
         resp.encoding = 'utf-8'
         
         soup = BeautifulSoup(resp.text, 'lxml')
         
-        # Find the summary table (tblSummary)
         table = soup.find('table', {'id': 'tblSummary'})
         if not table:
             return [{"error": "Could not find sponsor summary table"}]
         
-        sponsors = []
         tbody = table.find('tbody')
         if not tbody:
             return [{"error": "Could not find table body"}]
             
         rows = tbody.find_all('tr')
+        sponsors = []
         
         for row in rows:
             cells = row.find_all('td')
             if len(cells) >= 10:
                 try:
+                    ipo_count = _parse_int(cells[1].get_text(strip=True))
+                    up_count = _parse_int(cells[2].get_text(strip=True))
+                    
                     sponsor = {
                         "name": cells[0].get_text(strip=True),
-                        "ipo_count": _parse_int(cells[1].get_text(strip=True)),
-                        "up_count": _parse_int(cells[2].get_text(strip=True)),
+                        "ipo_count": ipo_count,
+                        "up_count": up_count,
                         "down_count": _parse_int(cells[3].get_text(strip=True)),
                         "avg_first_day": _parse_pct(cells[4].get_text(strip=True)),
                         "avg_cumulative": _parse_pct(cells[5].get_text(strip=True)),
@@ -235,20 +261,19 @@ def get_sponsor_history() -> list[dict]:
                         "best_return": _parse_pct(cells[7].get_text(strip=True)),
                         "worst_stock": cells[8].get_text(strip=True),
                         "worst_return": _parse_pct(cells[9].get_text(strip=True)),
+                        "win_rate": round(up_count / ipo_count * 100, 1) if ipo_count > 0 else 0
                     }
-                    # Calculate win rate
-                    total = sponsor["ipo_count"]
-                    if total > 0:
-                        sponsor["win_rate"] = round(sponsor["up_count"] / total * 100, 1)
-                    else:
-                        sponsor["win_rate"] = 0
                     sponsors.append(sponsor)
-                except (IndexError, ValueError):
+                except (IndexError, ValueError, ZeroDivisionError):
                     continue
         
-        return sponsors
-    except Exception as e:
-        return [{"error": str(e)}]
+        return sponsors if sponsors else [{"error": "No sponsor data found"}]
+    except Timeout:
+        return [{"error": "Request timed out"}]
+    except ReqConnectionError:
+        return [{"error": "Connection failed"}]
+    except RequestException as e:
+        return [{"error": f"Request failed: {e}"}]
 
 
 def _parse_int(s: str) -> int:
@@ -262,8 +287,8 @@ def _parse_int(s: str) -> int:
 def _parse_pct(s: str) -> Optional[float]:
     """Parse percentage from string like '+12.5%' or '-3.2%'."""
     try:
-        s = s.replace('%', '').replace('+', '').strip()
-        return float(s)
+        cleaned = s.replace('%', '').replace('+', '').strip()
+        return float(cleaned)
     except (ValueError, AttributeError):
         return None
 
@@ -291,22 +316,32 @@ def _normalize_sponsor_name(name: str) -> str:
 def search_sponsor(sponsors: list[dict], name: str) -> Optional[dict]:
     """Find a sponsor by name (partial match, handles traditional/simplified Chinese).
     
-    First tries to match in the top 10 list, then falls back to full sponsor lookup.
+    Args:
+        sponsors: List of sponsor dicts from get_sponsor_history()
+        name: Sponsor name to search (can be partial)
+        
+    Returns:
+        Matching sponsor dict or None
     """
+    # Reject empty/blank names early
+    if not name or not name.strip():
+        return None
+    
     name_normalized = _normalize_sponsor_name(name)
+    if not name_normalized:
+        return None
     
     # Try matching in provided list first (top 10 from summary)
     for s in sponsors:
         sponsor_normalized = _normalize_sponsor_name(s.get("name", ""))
-        if name_normalized in sponsor_normalized or sponsor_normalized in name_normalized:
+        if sponsor_normalized and (name_normalized in sponsor_normalized or sponsor_normalized in name_normalized):
             return s
     
     # Not in top 10? Try full sponsor list from AASTOCKS
     all_sponsors = get_all_sponsors()
     for sponsor_name, sponsor_id in all_sponsors.items():
         sponsor_normalized = _normalize_sponsor_name(sponsor_name)
-        if name_normalized in sponsor_normalized or sponsor_normalized in name_normalized:
-            # Found! Get detailed stats
+        if sponsor_normalized and (name_normalized in sponsor_normalized or sponsor_normalized in name_normalized):
             detail = get_sponsor_detail(sponsor_id)
             if detail:
                 return {
@@ -322,7 +357,7 @@ def search_sponsor(sponsors: list[dict], name: str) -> Optional[dict]:
     return None
 
 
-def main(argv=None):
+def main(argv: Optional[list[str]] = None) -> None:
     """CLI interface for sentiment data."""
     import argparse
     
@@ -335,18 +370,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
     
     if args.command == "vhsi":
-        data = get_vhsi()
+        data = get_hsi()
         if args.json:
             print(json.dumps(data, ensure_ascii=False, indent=2))
         else:
             if "error" in data:
                 print(f"Error: {data['error']}", file=sys.stderr)
                 sys.exit(1)
-            print(f"恒生指数 (HSI): {data['price']:.2f}")
-            print(f"变动: {data['change']:+.2f} ({data['change_pct']:+.2f}%)")
-            print(f"今日区间: {data['day_low']:.2f} - {data['day_high']:.2f}")
-            print(f"52周区间: {data['52w_low']:.2f} - {data['52w_high']:.2f}")
-            print(f"市场情绪: {data['interpretation']}")
+            print(f"恒生指数 (HSI): {_fmt(data.get('price'))}")
+            print(f"变动: {data.get('change', 0):+.2f} ({data.get('change_pct', 0):+.2f}%)")
+            print(f"今日区间: {_fmt(data.get('day_low'))} - {_fmt(data.get('day_high'))}")
+            print(f"52周区间: {_fmt(data.get('52w_low'))} - {_fmt(data.get('52w_high'))}")
+            print(f"市场情绪: {data.get('interpretation', 'N/A')}")
     
     elif args.command == "sponsor":
         sponsors = get_sponsor_history()
@@ -359,8 +394,10 @@ def main(argv=None):
         else:
             print(f"{'保荐人':<20} {'IPO数':>6} {'首日上涨':>8} {'首日下跌':>8} {'胜率':>8} {'平均首日':>10}")
             print("-" * 70)
-            for s in sponsors[:20]:  # Top 20
-                print(f"{s['name']:<20} {s['ipo_count']:>6} {s['up_count']:>8} {s['down_count']:>8} {s['win_rate']:>7.1f}% {s['avg_first_day'] or 'N/A':>10}")
+            for s in sponsors[:20]:
+                avg = s.get('avg_first_day')
+                avg_str = f"{avg:.2f}" if avg is not None else "N/A"
+                print(f"{s['name']:<20} {s['ipo_count']:>6} {s['up_count']:>8} {s['down_count']:>8} {s['win_rate']:>7.1f}% {avg_str:>10}")
     
     elif args.command == "sponsor-search":
         if not args.name:
@@ -381,10 +418,12 @@ def main(argv=None):
                 print(f"IPO 数量: {result['ipo_count']}")
                 print(f"首日上涨: {result['up_count']} ({result['win_rate']:.1f}%)")
                 print(f"首日下跌: {result['down_count']}")
-                print(f"平均首日表现: {result['avg_first_day']}%")
-                print(f"平均累计表现: {result['avg_cumulative']}%")
-                print(f"最佳: {result['best_stock']}")
-                print(f"最差: {result['worst_stock']}")
+                avg_first = result.get('avg_first_day')
+                print(f"平均首日表现: {_fmt(avg_first)}%")
+                avg_cum = result.get('avg_cumulative')
+                print(f"平均累计表现: {_fmt(avg_cum)}%")
+                print(f"最佳: {result.get('best_stock', 'N/A')}")
+                print(f"最差: {result.get('worst_stock', 'N/A')}")
         else:
             print(f"未找到保荐人: {args.name}", file=sys.stderr)
             sys.exit(1)

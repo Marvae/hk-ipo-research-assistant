@@ -346,7 +346,7 @@ def main():
                             "first_day_win_rate": round(first_day_rise / count * 100, 1) if count else None,
                         }
                         break
-            except:
+            except (ImportError, KeyError, TypeError, ZeroDivisionError):
                 pass
         
         # A+H 折价
@@ -362,7 +362,7 @@ def main():
                             "h_price_estimate": ah["h_price"],
                             "premium_pct": ah["premium_pct"],
                         }
-                except:
+                except (ValueError, TypeError, KeyError):
                     pass
         
         print(json.dumps(result, ensure_ascii=False, indent=2))
