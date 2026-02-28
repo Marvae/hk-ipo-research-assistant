@@ -14,6 +14,7 @@
     calendar    - 资金日历（踩踏/释放规划）
     ah          - A+H 折价计算
     hkex        - 港交所披露易（招股书）
+    sentiment   - 市场情绪（VHSI、保荐人历史）
 
 别名:
     overview    → 当前招股一览
@@ -21,6 +22,8 @@
     rating      → aipo rating-list
     grey        → aipo grey-list
     history     → jisilu list
+    vhsi        → sentiment vhsi
+    sponsor     → sentiment sponsor
 
 示例:
     ./hkipo overview
@@ -108,6 +111,9 @@ def main():
         'rating': ('aipo', ['rating-list']),
         'grey': ('aipo', ['grey-list']),
         'history': ('jisilu', ['list']),
+        'vhsi': ('sentiment', ['vhsi']),  # legacy alias
+        'hsi': ('sentiment', ['vhsi']),
+        'sponsor': ('sentiment', ['sponsor']),
     }
     
     if module in aliases:
@@ -177,6 +183,10 @@ def main():
                 print()
         else:
             print("用法: cli.py hkex active")
+    
+    elif module == 'sentiment':
+        from sentiment import main as sentiment_main
+        sentiment_main(remaining_args)
     
     elif module == 'etnet':
         # 保荐人统计（暂时简单实现）
