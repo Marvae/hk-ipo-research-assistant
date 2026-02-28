@@ -213,8 +213,38 @@ def get_sponsor_detail(sponsor_id: str) -> Optional[dict]:
         return None
 
 
+def _fallback_to_etnet() -> list[dict]:
+    """Fallback to etnet data source when AASTOCKS fails."""
+    try:
+        from etnet import fetch_sponsor_rankings
+        sponsors = fetch_sponsor_rankings()
+        if sponsors:
+            return [
+                {
+                    "name": s.sponsor_name,
+                    "ipo_count": s.ipo_count,
+                    "up_count": s.first_day_up_count,
+                    "down_count": s.first_day_down_count,
+                    "avg_first_day": s.avg_first_day_change,
+                    "avg_cumulative": None,
+                    "best_stock": s.best_stock.get("name") if s.best_stock else "N/A",
+                    "best_return": float(s.best_stock.get("change", "0").replace("%", "").replace("+", "")) if s.best_stock else None,
+                    "worst_stock": s.worst_stock.get("name") if s.worst_stock else "N/A",
+                    "worst_return": float(s.worst_stock.get("change", "0").replace("%", "").replace("+", "")) if s.worst_stock else None,
+                    "win_rate": s.first_day_up_rate,
+                    "source": "etnet"
+                }
+                for s in sponsors
+            ]
+    except (ImportError, Exception):
+        pass
+    return []
+
+
 def get_sponsor_history() -> list[dict]:
     """Get sponsor historical IPO performance from AASTOCKS (top 10).
+    
+    Falls back to etnet if AASTOCKS fails.
     
     Returns:
         List of dicts with sponsor performance data, or [{"error": "..."}] on error
@@ -234,10 +264,17 @@ def get_sponsor_history() -> list[dict]:
         
         table = soup.find('table', {'id': 'tblSummary'})
         if not table:
+            # Fallback to etnet
+            fallback = _fallback_to_etnet()
+            if fallback:
+                return fallback
             return [{"error": "Could not find sponsor summary table"}]
         
         tbody = table.find('tbody')
         if not tbody:
+            fallback = _fallback_to_etnet()
+            if fallback:
+                return fallback
             return [{"error": "Could not find table body"}]
             
         rows = tbody.find_all('tr')
@@ -261,18 +298,34 @@ def get_sponsor_history() -> list[dict]:
                         "best_return": _parse_pct(cells[7].get_text(strip=True)),
                         "worst_stock": cells[8].get_text(strip=True),
                         "worst_return": _parse_pct(cells[9].get_text(strip=True)),
-                        "win_rate": round(up_count / ipo_count * 100, 1) if ipo_count > 0 else 0
+                        "win_rate": round(up_count / ipo_count * 100, 1) if ipo_count > 0 else 0,
+                        "source": "aastocks"
                     }
                     sponsors.append(sponsor)
                 except (IndexError, ValueError, ZeroDivisionError):
                     continue
         
-        return sponsors if sponsors else [{"error": "No sponsor data found"}]
+        if not sponsors:
+            fallback = _fallback_to_etnet()
+            if fallback:
+                return fallback
+            return [{"error": "No sponsor data found"}]
+        
+        return sponsors
     except Timeout:
+        fallback = _fallback_to_etnet()
+        if fallback:
+            return fallback
         return [{"error": "Request timed out"}]
     except ReqConnectionError:
+        fallback = _fallback_to_etnet()
+        if fallback:
+            return fallback
         return [{"error": "Connection failed"}]
     except RequestException as e:
+        fallback = _fallback_to_etnet()
+        if fallback:
+            return fallback
         return [{"error": f"Request failed: {e}"}]
 
 

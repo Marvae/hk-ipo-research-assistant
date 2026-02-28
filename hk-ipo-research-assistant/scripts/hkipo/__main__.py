@@ -189,8 +189,62 @@ def main():
         sentiment_main(remaining_args)
     
     elif module == 'etnet':
-        # 保荐人统计（暂时简单实现）
-        print("etnet 模块待完善，请用 jisilu list --sponsor <名称> 查保荐人历史")
+        # 保荐人统计（etnet 经济通数据源）
+        import json
+        from etnet import fetch_sponsor_rankings, get_sponsor_stats
+        
+        subcommand = remaining_args[0] if remaining_args else 'list'
+        
+        if subcommand == 'list':
+            # 获取保荐人排名列表
+            output_json = '--json' in remaining_args
+            limit = 20
+            for i, arg in enumerate(remaining_args):
+                if arg == '--limit' and i + 1 < len(remaining_args):
+                    limit = int(remaining_args[i + 1])
+            
+            try:
+                sponsors = fetch_sponsor_rankings()
+            except Exception as e:
+                print(f"获取 etnet 数据失败: {e}", file=sys.stderr)
+                sys.exit(1)
+            
+            if not sponsors:
+                print("获取 etnet 数据失败: 无数据返回", file=sys.stderr)
+                sys.exit(1)
+            
+            sponsors = sponsors[:limit]
+            
+            if output_json:
+                print(json.dumps([s.to_dict() for s in sponsors], ensure_ascii=False, indent=2))
+            else:
+                print(f"{'保荐人':<25} {'IPO数':>6} {'首日胜率':>10} {'平均首日':>10}")
+                print("-" * 60)
+                for s in sponsors:
+                    print(f"{s.sponsor_name:<25} {s.ipo_count:>6} {s.first_day_up_rate:>9.1f}% {s.avg_first_day_change:>+9.2f}%")
+        
+        elif subcommand == 'search':
+            # 搜索特定保荐人
+            name = None
+            for i, arg in enumerate(remaining_args):
+                if arg == '--name' and i + 1 < len(remaining_args):
+                    name = remaining_args[i + 1]
+            
+            if not name:
+                print("用法: ./hkipo etnet search --name <保荐人名称>", file=sys.stderr)
+                sys.exit(1)
+            
+            result = get_sponsor_stats(name)
+            if result:
+                print(json.dumps(result.to_dict(), ensure_ascii=False, indent=2))
+            else:
+                print(f"未找到保荐人: {name}", file=sys.stderr)
+                sys.exit(1)
+        
+        else:
+            print(f"未知子命令: {subcommand}")
+            print("可用: list, search")
+            sys.exit(1)
     
     elif module == 'odds':
         # 中签率表格（调用 allotment table）

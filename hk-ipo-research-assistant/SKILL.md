@@ -10,22 +10,44 @@ description: |
 
 > **数据来自第三方公开网站，不构成投资建议。**
 
+## 安装依赖
+
+首次使用前安装 Python 依赖：
+
+```bash
+cd <skill_dir>
+pip install -r scripts/requirements.txt
+```
+
+需要 Python 3.10+。
+
+## 调用方式
+
+所有命令通过 Python 调用：
+
+```bash
+cd <skill_dir>
+python3 scripts/hkipo.py <命令> [参数]
+```
+
+以下文档中的命令（如 `overview`、`analyze 02692`）都省略了前缀，实际调用时加上 `python3 scripts/hkipo.py`。
+
 ## 快速开始
 
 ```bash
 cd <skill_dir>
 
 # 当前招股一览
-./hkipo overview
+python3 scripts/hkipo.py overview
 
 # 一键分析（聚合多维度数据）
-./hkipo analyze 02692
+python3 scripts/hkipo.py analyze 02692
 
 # 单只股票分项查询
-./hkipo aipo ipo-brief 02692        # 基本信息
-./hkipo aipo margin-detail 02692    # 孖展明细
-./hkipo aipo cornerstone 02692      # 基石投资者
-./hkipo aipo rating-detail 02692    # 机构评级
+python3 scripts/hkipo.py aipo ipo-brief 02692        # 基本信息
+python3 scripts/hkipo.py aipo margin-detail 02692    # 孖展明细
+python3 scripts/hkipo.py aipo cornerstone 02692      # 基石投资者
+python3 scripts/hkipo.py aipo rating-detail 02692    # 机构评级
 ```
 
 ## 完整命令清单
@@ -102,11 +124,14 @@ cd <skill_dir>
 | `hsi` | 恒生指数当日表现（大盘情绪） |
 | `sponsor` | 保荐人历史排名（胜率、平均首日表现） |
 | `sentiment sponsor-search --name <名称>` | 查特定保荐人战绩 |
+| `etnet list` | 保荐人排名（经济通数据，备用） |
+| `etnet search --name <名称>` | 查保荐人（经济通数据） |
 
 结合以下数据综合判断：
 - **大盘情绪**：HSI 涨跌反映整体风险偏好
 - **保荐人战绩**：胜率 >80% 的保荐人历史表现更好
 - **孖展金额**：>50亿热门，>100亿爆款
+- **数据源 Fallback**：AASTOCKS 挂了自动切换 etnet
 
 ## 输出格式
 

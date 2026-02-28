@@ -41,19 +41,20 @@ pip3 install -r scripts/requirements.txt
 ## 命令参考
 
 ```bash
-./hkipo overview                      # 当前招股一览
-./hkipo analyze 02692                 # 一键分析
-./hkipo aipo margin-detail 02692      # 孖展明细
-./hkipo aipo cornerstone 02692        # 基石投资者
-./hkipo odds --oversub 38 --price 73  # 中签率表格
-./hkipo jisilu list --sponsor 招商    # 保荐人历史
-./hkipo ah compare 02692 --price 73.68 --name 兆威  # A+H折价
+cd hk-ipo-research-assistant
+python3 scripts/hkipo.py overview                      # 当前招股一览
+python3 scripts/hkipo.py analyze 02692                 # 一键分析
+python3 scripts/hkipo.py aipo margin-detail 02692      # 孖展明细
+python3 scripts/hkipo.py aipo cornerstone 02692        # 基石投资者
+python3 scripts/hkipo.py odds --oversub 38 --price 73  # 中签率表格
+python3 scripts/hkipo.py jisilu list --sponsor 招商    # 保荐人历史
+python3 scripts/hkipo.py ah compare 02692 --price 73.68 --name 兆威  # A+H折价
 ```
 
 **输出示例**
 
 ```
-$ ./hkipo overview
+$ python3 scripts/hkipo.py overview
 
 📈 美格智能 (03268)
    孖展: 16.27 亿港元 | 入场费: 2915 港元 | PE: 59.2x
@@ -63,7 +64,7 @@ $ ./hkipo overview
 ```
 
 ```
-$ ./hkipo odds --oversub 38 --price 73
+$ python3 scripts/hkipo.py odds --oversub 38 --price 73
 
     手数 │      金额 │   中签率 │ 分组
 ───────┼─────────┼────────┼─────
