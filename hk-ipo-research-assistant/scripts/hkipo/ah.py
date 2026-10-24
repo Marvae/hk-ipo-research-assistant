@@ -6,6 +6,11 @@ import httpx
 
 from opencc import OpenCC
 
+try:
+    from common import http_client
+except ImportError:  # 包模式（hkipo.*）且本目录不在 sys.path 时
+    from .common import http_client
+
 _t2s = OpenCC("t2s").convert
 
 CNY_HKD_RATE = 1.12
@@ -33,7 +38,7 @@ def search_a_share_code(company_name: str) -> str | None:
         try:
             encoded = urllib.parse.quote(name)
             url = f"https://suggest3.sinajs.cn/suggest/type=11,12&key={encoded}"
-            resp = httpx.get(url, timeout=10)
+            resp = http_client().get(url, timeout=10, follow_redirects=False)
             m = re.search(r",(sz|sh)(\d{6}),", resp.text)
             if m:
                 code = f"{m.group(1)}{m.group(2)}"
@@ -49,7 +54,7 @@ def search_a_share_code(company_name: str) -> str | None:
 def fetch_a_share_price(a_code: str) -> float:
     """Fetch A-share price from Tencent Finance API."""
     try:
-        resp = httpx.get(f"https://qt.gtimg.cn/q={a_code}", timeout=10)
+        resp = http_client().get(f"https://qt.gtimg.cn/q={a_code}", timeout=10, follow_redirects=False)
         parts = resp.text.split("~")
         if len(parts) > 3:
             return float(parts[3])

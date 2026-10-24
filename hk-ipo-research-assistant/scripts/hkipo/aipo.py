@@ -16,14 +16,19 @@ import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 import httpx
+
+try:
+    from common import USER_AGENT
+except ImportError:  # 包模式（hkipo.aipo）且本目录不在 sys.path 时
+    from .common import USER_AGENT
 
 # 常量
 BASE_URL = "https://aipo.myiqdii.com"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": USER_AGENT,
     "Accept": "application/json",
 }
 
@@ -275,7 +280,7 @@ def _code_with_prefix(code: str) -> str:
 # Margin APIs (孖展数据)
 # =============================================================================
 
-def fetch_margin_list(sector: str = "") -> list[dict]:
+def _fetch_margin_list_aipo(sector: str = "") -> list[dict]:
     """获取当前招股中 IPO 的孖展列表。
     
     Args:
@@ -311,7 +316,7 @@ def fetch_margin_list(sector: str = "") -> list[dict]:
     return result
 
 
-def fetch_margin_detail(code: str) -> MarginSummary | None:
+def _fetch_margin_detail_aipo(code: str) -> MarginSummary | None:
     """获取单只股票的孖展详情，包含各券商明细。
     
     Args:
@@ -395,7 +400,7 @@ def get_margin_by_code(code: str) -> dict | None:
 # Rating APIs (评级数据) ⭐
 # =============================================================================
 
-def fetch_rating_list(sector: str = "", page_size: int = 100) -> list[dict]:
+def _fetch_rating_list_aipo(sector: str = "", page_size: int = 100) -> list[dict]:
     """获取新股评级列表。
     
     Args:
@@ -436,7 +441,7 @@ def fetch_rating_list(sector: str = "", page_size: int = 100) -> list[dict]:
     return result
 
 
-def fetch_rating_detail(code: str) -> list[AgencyRating]:
+def _fetch_rating_detail_aipo(code: str) -> list[AgencyRating]:
     """获取单只股票各机构评级详情。
     
     Args:
@@ -497,7 +502,7 @@ def get_rating_by_code(code: str) -> dict | None:
 # Grey Market APIs (暗盘数据) 🌙
 # =============================================================================
 
-def fetch_grey_list(
+def _fetch_grey_list_aipo(
     sector: str = "",
     order_by: str = "resultDate",
     order_dir: str = "desc",
@@ -552,7 +557,7 @@ def fetch_grey_list(
     return result
 
 
-def fetch_allotment_results(page_size: int = 100) -> list[dict]:
+def _fetch_allotment_results_aipo(page_size: int = 100) -> list[dict]:
     """获取配售结果列表。
     
     Returns:
@@ -592,7 +597,7 @@ def fetch_allotment_results(page_size: int = 100) -> list[dict]:
     return result
 
 
-def fetch_today_grey_market(top: int = 10) -> list[dict]:
+def _fetch_today_grey_market_aipo(top: int = 10) -> list[dict]:
     """获取今日暗盘股票列表（首页用）。
     
     Args:
@@ -986,7 +991,7 @@ def fetch_ipo_by_registered_office(year: int) -> list[dict]:
 # IPO Detail APIs (IPO详情)
 # =============================================================================
 
-def fetch_ipo_brief(code: str) -> dict | None:
+def _fetch_ipo_brief_aipo(code: str) -> dict | None:
     """获取新股简况。
     
     Args:
@@ -1050,7 +1055,7 @@ def fetch_ipo_brief(code: str) -> dict | None:
     }
 
 
-def fetch_cornerstone_investors(code: str) -> list[CornerstoneInvestor]:
+def _fetch_cornerstone_investors_aipo(code: str) -> list[CornerstoneInvestor]:
     """获取基石投资者信息。
     
     Args:
@@ -1165,7 +1170,7 @@ def fetch_company_managers(code: str) -> list[dict]:
 # Sponsor/Broker APIs (保荐人数据)
 # =============================================================================
 
-def fetch_sponsor_history(
+def _fetch_sponsor_history_aipo(
     sponsor_name: str,
     sponsor_type: int = 0,
     page_size: int = 20
@@ -1216,7 +1221,7 @@ def fetch_sponsor_history(
 # Broker Ranking APIs (券商排名数据) 🏆
 # =============================================================================
 
-def fetch_bookrunner_ranking(
+def _fetch_bookrunner_ranking_aipo(
     start_date: str,
     end_date: str,
     sector: str = "",
@@ -1854,3 +1859,131 @@ def main(argv=None):
 if __name__ == "__main__":
     main()
 
+
+
+# =============================================================================
+# AiPO 可用性与回退（issue #1：AiPO 自 2026-06 起不可用）
+# 公开函数先试 AiPO 原实现（上方 _*_aipo）；进程内一旦失败就不再重试，
+# 改走 aipo_fallback（AAStocks + 富途，免登录）。AiPO 恢复后自动切回。
+# =============================================================================
+
+# 线程说明：__main__ 的 analyze 会多线程并发调用本模块的 fetch_* 函数，
+# 因此多个线程可能同时走 _aipo_try 并重复尝试一两次 AiPO、重复写本标记。
+# bool 赋值在 CPython 下是原子的，最坏结果只是多一两次快速失败的连接，
+# 「AiPO 不可用后全部走回退」的语义不变。
+_AIPO_DOWN = False
+_AIPO_FAILED = object()
+
+
+def _aipo_try(fn, *args, **kwargs):
+    global _AIPO_DOWN
+    if _AIPO_DOWN:
+        return _AIPO_FAILED
+    try:
+        return fn(*args, **kwargs)
+    except Exception:
+        _AIPO_DOWN = True
+        return _AIPO_FAILED
+
+
+def fetch_ipo_brief(code: str) -> dict | None:
+    """获取新股简况（AiPO 优先，AAStocks 回退）"""
+    r = _aipo_try(_fetch_ipo_brief_aipo, code)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_brief
+    return fallback_brief(code)
+
+
+def fetch_cornerstone_investors(code: str) -> list[CornerstoneInvestor]:
+    """获取基石投资者（AiPO 优先，AAStocks 机构投资者表回退）"""
+    r = _aipo_try(_fetch_cornerstone_investors_aipo, code)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_cornerstone
+    return [CornerstoneInvestor(**d) for d in fallback_cornerstone(code)]
+
+
+def fetch_margin_detail(code: str) -> MarginSummary | None:
+    """获取孖展明细（AiPO 优先；回退仅配发后可用，给出超购倍数）"""
+    r = _aipo_try(_fetch_margin_detail_aipo, code)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_margin_detail
+    d = fallback_margin_detail(code)
+    return MarginSummary(**d) if d else None
+
+
+def fetch_margin_list(sector: str = "") -> list[dict]:
+    """获取招股中 IPO 列表（AiPO 优先，AAStocks 招股列表回退；回退无实时孖展额）"""
+    r = _aipo_try(_fetch_margin_list_aipo, sector)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_margin_list
+    return fallback_margin_list()
+
+
+def fetch_rating_list(sector: str = "", page_size: int = 100) -> list[dict]:
+    """机构评级列表（无免登录替代源，AiPO 不可用时返回空）"""
+    r = _aipo_try(_fetch_rating_list_aipo, sector, page_size)
+    return r if (r is not _AIPO_FAILED and r) else []
+
+
+def fetch_rating_detail(code: str) -> list[AgencyRating]:
+    """机构评级明细（无免登录替代源，AiPO 不可用时返回空）"""
+    r = _aipo_try(_fetch_rating_detail_aipo, code)
+    return r if (r is not _AIPO_FAILED and r) else []
+
+
+def fetch_grey_list(
+    sector: str = "",
+    order_by: str = "resultDate",
+    order_dir: str = "desc",
+    page_size: int = 100
+) -> list[dict]:
+    """暗盘列表（AiPO 优先，富途已上市新股暗盘涨跌幅回退）"""
+    r = _aipo_try(_fetch_grey_list_aipo, sector, order_by, order_dir, page_size)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_grey_list
+    return fallback_grey_list(page_size)
+
+
+def fetch_today_grey_market(top: int = 10) -> list[dict]:
+    """今日暗盘（AiPO 优先，AAStocks 最近配发结果回退）"""
+    r = _aipo_try(_fetch_today_grey_market_aipo, top)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_today_grey
+    return fallback_today_grey(top)
+
+
+def fetch_allotment_results(page_size: int = 100) -> list[dict]:
+    """配发结果列表（AiPO 优先，AAStocks 配发结果表回退）"""
+    r = _aipo_try(_fetch_allotment_results_aipo, page_size)
+    if r is not _AIPO_FAILED and r:
+        return r
+    from aipo_fallback import fallback_allotment_results
+    return fallback_allotment_results()
+
+
+def fetch_bookrunner_ranking(
+    start_date: str,
+    end_date: str,
+    sector: str = "",
+    page_size: int = 50,
+    page_index: int = 1,
+) -> list[dict]:
+    """账簿管理人排名（无免登录替代源，AiPO 不可用时返回空；保荐人数据可用 jisilu/etnet）"""
+    r = _aipo_try(_fetch_bookrunner_ranking_aipo, start_date, end_date, sector, page_size, page_index)
+    return r if (r is not _AIPO_FAILED and r) else []
+
+
+def fetch_sponsor_history(
+    sponsor_name: str,
+    sponsor_type: int = 0,
+    page_size: int = 20
+) -> list[dict]:
+    """保荐人历史（AiPO 实现；不可用时返回空，请改用 jisilu/etnet 模块）"""
+    r = _aipo_try(_fetch_sponsor_history_aipo, sponsor_name, sponsor_type, page_size)
+    return r if (r is not _AIPO_FAILED and r) else []

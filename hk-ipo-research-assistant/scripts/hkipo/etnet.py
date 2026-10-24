@@ -9,16 +9,15 @@ import re
 from dataclasses import dataclass
 from typing import Optional
 
-import httpx
 from bs4 import BeautifulSoup
 
 
 # 常量
 ETNET_SPONSOR_URL = "https://www.etnet.com.hk/www/tc/stocks/ipo-sponsor-performance.php"
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
+try:
+    from common import USER_AGENT, http_client
+except ImportError:  # 包模式（hkipo.*）且本目录不在 sys.path 时
+    from .common import USER_AGENT, http_client
 
 
 @dataclass
@@ -110,7 +109,7 @@ def _fetch_page(page: int = 1) -> str:
         url = f"{ETNET_SPONSOR_URL}?page={page}"
     
     headers = {"User-Agent": USER_AGENT}
-    response = httpx.get(url, headers=headers, timeout=30)
+    response = http_client().get(url, headers=headers, follow_redirects=False)
     response.raise_for_status()
     return response.text
 

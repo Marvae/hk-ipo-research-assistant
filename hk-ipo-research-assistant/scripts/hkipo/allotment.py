@@ -19,8 +19,7 @@
 
 import argparse
 import json
-import math
-from typing import Any, Optional, TypedDict
+from typing import Optional, TypedDict
 
 # ============================================================
 # 核心常量（基于历史数据拟合）
@@ -551,7 +550,7 @@ def main(argv=None):
         if args.json:
             print(json.dumps(result, ensure_ascii=False, indent=2))
         else:
-            print(f"📊 中签率预测")
+            print("📊 中签率预测")
             print(f"   IPO: {args.name}")
             print(f"   发售价: {args.price} HKD | 机制: {args.mechanism}")
             print(f"   超购: {args.oversub}x | 申购: {args.lots}手")

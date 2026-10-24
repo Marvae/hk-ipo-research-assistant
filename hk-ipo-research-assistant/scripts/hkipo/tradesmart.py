@@ -15,10 +15,10 @@ import httpx
 # 常量
 TRADESMART_API_URL = "https://lowrisktradesmart.org/api/ipos"
 REQUEST_TIMEOUT = 30
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
+try:
+    from common import USER_AGENT, http_client
+except ImportError:  # 包模式（hkipo.*）且本目录不在 sys.path 时
+    from .common import USER_AGENT, http_client
 
 
 def _normalize_ipo(raw: dict) -> dict:
@@ -79,21 +79,22 @@ def fetch_tradesmart_ipos() -> list[dict]:
         "Accept": "application/json",
     }
     
-    response = httpx.get(
-        TRADESMART_API_URL, 
-        headers=headers, 
-        timeout=REQUEST_TIMEOUT
+    response = http_client().get(
+        TRADESMART_API_URL,
+        headers=headers,
+        timeout=REQUEST_TIMEOUT,
+        follow_redirects=False
     )
     response.raise_for_status()
     
     data = response.json()
     
     if not isinstance(data, dict) or "items" not in data:
-        raise ValueError(f"API 返回格式异常: 缺少 'items' 字段")
+        raise ValueError("API 返回格式异常: 缺少 'items' 字段")
     
     items = data["items"]
     if not isinstance(items, list):
-        raise ValueError(f"API 返回格式异常: 'items' 不是列表")
+        raise ValueError("API 返回格式异常: 'items' 不是列表")
     
     return [_normalize_ipo(item) for item in items]
 
@@ -226,7 +227,7 @@ def main(argv=None):
                 else:
                     print(f"\n未找到 {args.shares:,} 股对应档位")
 
-    except requests.RequestException as e:
+    except httpx.HTTPError as e:
         print(f"网络错误: {e}", file=sys.stderr)
         sys.exit(1)
     except ValueError as e:

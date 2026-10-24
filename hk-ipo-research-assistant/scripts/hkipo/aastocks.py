@@ -22,15 +22,19 @@
 
 import re
 import sys
-from typing import Any, Optional
 
 import httpx
 from bs4 import BeautifulSoup
 
+try:
+    from common import USER_AGENT, fetch_text
+except ImportError:  # 包模式（hkipo.aastocks）且本目录不在 sys.path 时
+    from .common import USER_AGENT, fetch_text
+
 # 常量
 BASE_URL = "https://www.aastocks.com"
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "User-Agent": USER_AGENT,
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
     "Accept-Language": "zh-TW,zh;q=0.9,en;q=0.8",
 }
@@ -69,14 +73,12 @@ def get_upcoming_ipos() -> list[dict]:
     url = f"{BASE_URL}/tc/stocks/market/ipo/upcomingipo/company-summary"
     
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(url, headers=HEADERS)
-            response.raise_for_status()
+        html = fetch_text(url, headers=HEADERS)
     except httpx.HTTPError as e:
         print(f"Error fetching upcoming IPOs: {e}", file=sys.stderr)
         return []
     
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     ipos = []
     
     # 查找即将上市的 IPO 表格 (tblGMUpcoming)
@@ -151,14 +153,12 @@ def get_listed_ipos(limit: int = 20) -> list[dict]:
     url = f"{BASE_URL}/tc/stocks/market/ipo/listedipo.aspx"
     
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(url, headers=HEADERS)
-            response.raise_for_status()
+        html = fetch_text(url, headers=HEADERS)
     except httpx.HTTPError as e:
         print(f"Error fetching listed IPOs: {e}", file=sys.stderr)
         return []
     
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     ipos = []
     
     # 查找已上市 IPO 表格
@@ -209,14 +209,12 @@ def get_ipo_detail(symbol: str) -> dict | None:
     url = f"{BASE_URL}/tc/stocks/market/ipo/upcomingipo/company-summary?symbol={symbol}"
     
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(url, headers=HEADERS)
-            response.raise_for_status()
+        html = fetch_text(url, headers=HEADERS)
     except httpx.HTTPError as e:
         print(f"Error fetching IPO detail for {symbol}: {e}", file=sys.stderr)
         return None
     
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     
     # 提取公司名称
     title_div = soup.find("div", class_="title")
@@ -364,14 +362,12 @@ def get_allotment_results() -> list[dict]:
     url = f"{BASE_URL}/tc/stocks/market/ipo/upcomingipo/company-summary"
     
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(url, headers=HEADERS)
-            response.raise_for_status()
+        html = fetch_text(url, headers=HEADERS)
     except httpx.HTTPError as e:
         print(f"Error fetching allotment results: {e}", file=sys.stderr)
         return []
     
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     
     # 查找中签率表格
     table = soup.find("table", id="tblAllotmentResult")
@@ -411,14 +407,12 @@ def get_grey_market_schedule() -> list[dict]:
     url = f"{BASE_URL}/tc/stocks/market/ipo/greymarket.aspx"
     
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(url, headers=HEADERS)
-            response.raise_for_status()
+        html = fetch_text(url, headers=HEADERS)
     except httpx.HTTPError as e:
         print(f"Error fetching grey market schedule: {e}", file=sys.stderr)
         return []
     
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     
     schedule = []
     
@@ -487,14 +481,12 @@ def get_sponsor_performance(symbol: str) -> list[dict]:
     url = f"{BASE_URL}/tc/stocks/market/ipo/upcomingipo/company-summary?symbol={symbol}"
     
     try:
-        with httpx.Client(timeout=30, follow_redirects=True) as client:
-            response = client.get(url, headers=HEADERS)
-            response.raise_for_status()
+        html = fetch_text(url, headers=HEADERS)
     except httpx.HTTPError as e:
         print(f"Error fetching sponsor performance for {symbol}: {e}", file=sys.stderr)
         return []
     
-    soup = BeautifulSoup(response.text, "html.parser")
+    soup = BeautifulSoup(html, "html.parser")
     
     # 查找保荐人表现表格
     table = soup.find("table", id="tblSponsor")

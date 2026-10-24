@@ -1,9 +1,10 @@
 ---
 name: hk-ipo-research-assistant
 description: |
-  港股 IPO 打新研究助手。抓取实时数据（孖展、基石、评级、暗盘、A+H折价、中签率），供 AI 分析判断。
-  触发词：港股打新、新股分析、IPO、孖展、保荐人、暗盘、中签率、基石投资者。
-  不适用：A 股打新、美股 IPO、基金申购。
+  港股 IPO 打新研究助手：抓取实时招股数据（孖展、基石投资者、机构评级、暗盘、A+H 折价、保荐人历史战绩）并预测中签率，供 AI 判断「某只港股新股值不值得打」。
+  触发场景：用户问最近有什么港股新股、某只新股（如 02692）值不值得申购、孖展认购热度、基石阵容、保荐人往绩、中签率估算时使用。
+  触发词：港股打新、新股分析、IPO、孖展、基石投资者、保荐人、暗盘、中签率、入场费、超购倍数；Hong Kong IPO、HK IPO、IPO subscription、cornerstone investors、allotment odds。
+  不适用：A 股打新、美股 IPO、已上市股票的日常买卖建议、基金申购。
 ---
 
 # 港股打新研究助手
@@ -60,15 +61,15 @@ python3 scripts/hkipo.py aipo rating-detail 02692    # 机构评级
 | `analyze <代码>` | **一键分析**（聚合基本面+孖展+基石+评级+保荐人历史） |
 | `profile` | **用户画像 + 当前 IPO 数据**（读取用户画像，输出当前 IPO 数据供 AI 分析） |
 
-### AiPO 数据（主力数据源）
+### AiPO 数据（命令名不变；AiPO 2026-06 起不可用，已自动回退 AAStocks/富途）
 | 命令 | 说明 |
 |------|------|
-| `aipo margin-list` | 孖展列表（当前招股） |
-| `aipo margin-detail <代码>` | 单只孖展明细（13+券商） |
-| `aipo rating-list` | 新股评级列表 |
-| `aipo rating-detail <代码>` | 单只评级明细（各机构打分） |
-| `aipo ipo-brief <代码>` | IPO 基本信息（保荐人、发行价、市值、PE） |
-| `aipo cornerstone <代码>` | 基石投资者（名单、金额、锁定期、解禁日） |
+| `aipo margin-list` | 招股中 IPO 列表（回退源无实时孖展额，total_margin 为 0） |
+| `aipo margin-detail <代码>` | 配发后给出实际超购倍数；招股期实时孖展明细暂无替代源 |
+| `aipo rating-list` | 新股评级列表（暂无替代源，AiPO 不可用时为空） |
+| `aipo rating-detail <代码>` | 单只评级明细（暂无替代源，AiPO 不可用时为空） |
+| `aipo ipo-brief <代码>` | IPO 基本信息（保荐人、发行价、入场费、招股/上市日期；回退源无 PE） |
+| `aipo cornerstone <代码>` | 基石投资者（名单、估算持股比例、解禁日） |
 | `aipo placing <代码>` | 配售结果 |
 
 ### 暗盘数据

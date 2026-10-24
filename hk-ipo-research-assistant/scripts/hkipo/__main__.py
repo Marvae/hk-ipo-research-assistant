@@ -58,8 +58,20 @@ def show_overview():
         # 按孖展金额排序
         ipos.sort(key=lambda x: x.total_margin if hasattr(x, 'total_margin') else 0, reverse=True)
         
-        for ipo in ipos:
-            code = ipo.code if hasattr(ipo, 'code') else ipo.get('code', '')
+        # 各只 IPO 的简况抓取互不依赖，并行预取（pool.map 保序，输出顺序不变）
+        def _brief_or_none(c):
+            try:
+                return fetch_ipo_brief(c)
+            except Exception:
+                return None
+        
+        from concurrent.futures import ThreadPoolExecutor
+        codes = [ipo.code if hasattr(ipo, 'code') else ipo.get('code', '') for ipo in ipos]
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            briefs = list(pool.map(_brief_or_none, codes))
+        
+        for idx, ipo in enumerate(ipos):
+            code = codes[idx]
             name = ipo.name if hasattr(ipo, 'name') else ipo.get('name', '')
             margin = ipo.total_margin if hasattr(ipo, 'total_margin') else ipo.get('total_margin', 0)
             listing = ipo.listing_date if hasattr(ipo, 'listing_date') else ipo.get('listing_date', '')
@@ -68,14 +80,14 @@ def show_overview():
             min_cap = 0
             pe = 0
             industry = ''
-            try:
-                brief = fetch_ipo_brief(code)
-                if brief:
+            brief = briefs[idx]
+            if brief:
+                try:
                     min_cap = brief.get('minimum_capital', 0) if isinstance(brief, dict) else getattr(brief, 'minimum_capital', 0)
                     pe = brief.get('pe', 0) if isinstance(brief, dict) else getattr(brief, 'pe', 0)
                     industry = brief.get('industry', '') if isinstance(brief, dict) else getattr(brief, 'industry', '')
-            except (KeyError, TypeError, AttributeError):
-                pass
+                except Exception:
+                    pass
             
             print(f"\n📈 {name} ({code})")
             print(f"   孖展: {margin:.2f} 亿港元")
@@ -123,11 +135,20 @@ def main():
     # 模块分发
     if module == 'aipo':
         from aipo import main as aipo_main
-        aipo_main(remaining_args)
+        try:
+            aipo_main(remaining_args)
+        except Exception as e:
+            print(f"⚠️ AiPO 数据源当前不可用（{type(e).__name__}: {e}）", file=sys.stderr)
+            print("受影响：孖展、基石、评级、暗盘。仍可用：overview、calendar、history（集思录）、etnet、odds、ah。", file=sys.stderr)
+            sys.exit(1)
     
     elif module == 'jisilu':
         from jisilu import main as jisilu_main
-        jisilu_main(remaining_args)
+        try:
+            jisilu_main(remaining_args)
+        except Exception as e:
+            print(f"获取集思录数据失败: {e}", file=sys.stderr)
+            sys.exit(1)
     
     elif module == 'futu':
         from futu import main as futu_main
@@ -170,7 +191,11 @@ def main():
         import json
         from hkex import fetch_hkex_active_ipos_sync, get_prospectus_url
         if len(remaining_args) >= 1 and remaining_args[0] == 'active':
-            ipos = fetch_hkex_active_ipos_sync()
+            try:
+                ipos = fetch_hkex_active_ipos_sync()
+            except Exception as e:
+                print(f"获取港交所数据失败: {e}", file=sys.stderr)
+                sys.exit(1)
             for ipo in ipos[:10]:
                 url = get_prospectus_url(ipo)
                 print(f"{ipo.name}")
@@ -286,7 +311,7 @@ def main():
             for r in results:
                 amt = int(entry_fee * r['lots'])
                 print(f"{r['lots']:>6} │ {amt:>12,} │ {r['probability_pct']:>8} │ {r['group']}")
-            print(f"\n⚠️ 基于 TradeSmart 算法预测，实际以官方公告为准")
+            print("\n⚠️ 基于 TradeSmart 算法预测，实际以官方公告为准")
     
     elif module == 'calendar':
         # 资金日历（截止日期分组）
@@ -319,11 +344,32 @@ def main():
         from aipo import fetch_ipo_brief, fetch_margin_detail, fetch_cornerstone_investors, fetch_rating_detail
         from jisilu import fetch_jisilu_history
         from ah import fetch_ah_comparison
+
+        def _aipo_safe(fn, *a):
+            """AiPO 数据源异常时返回 None，让 analyze 降级输出其余部分"""
+            try:
+                return fn(*a)
+            except Exception:
+                return None
         
         result = {"code": code}
         
+        # 简况/孖展/基石/评级四个抓取互不依赖，并行执行；
+        # 后面的 jisilu 保荐人历史与 A+H 折价依赖 brief，仍保持串行。
+        # 注：多线程会并发触发 aipo 的 _AIPO_DOWN 标记，最坏情况多尝试
+        # 一两次 AiPO（连接失败很快），回退语义不变。
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            f_brief = pool.submit(_aipo_safe, fetch_ipo_brief, code)
+            f_margin = pool.submit(_aipo_safe, fetch_margin_detail, code)
+            f_cornerstone = pool.submit(_aipo_safe, fetch_cornerstone_investors, code)
+            f_ratings = pool.submit(_aipo_safe, fetch_rating_detail, code)
+            brief = f_brief.result()
+            margin = f_margin.result()
+            cornerstone = f_cornerstone.result()
+            ratings = f_ratings.result()
+        
         # 基本信息
-        brief = fetch_ipo_brief(code)
         if brief:
             result["brief"] = {
                 "name": brief.get("principal_activities", "")[:50],  # 用主营业务代替名称
@@ -337,17 +383,16 @@ def main():
             }
         
         # 孖展
-        margin = fetch_margin_detail(code)
         if margin:
             result["margin"] = {
                 "total_billion": margin.total_margin,
+                "oversubscription_actual": margin.oversubscription_actual,
                 "top_broker": margin.broker_margins[0].broker_name if margin.broker_margins else None,
                 "top_amount_billion": margin.broker_margins[0].margin_amount if margin.broker_margins else None,
                 "broker_count": len(margin.broker_margins),
             }
         
         # 基石投资者
-        cornerstone = fetch_cornerstone_investors(code)
         if cornerstone:
             result["cornerstone"] = {
                 "count": len(cornerstone),
@@ -356,13 +401,15 @@ def main():
             }
         
         # 评级
-        ratings = fetch_rating_detail(code)
         if ratings:
             avg_score = sum(r.score for r in ratings) / len(ratings)
             result["rating"] = {"avg_score": round(avg_score, 1), "count": len(ratings)}
         else:
             result["rating"] = {"note": "暂无评级（通常招股后期发布）"}
         
+        if not brief and not margin and not cornerstone:
+            result["warning"] = "AiPO 数据源不可用：基本信息/孖展/基石/评级缺失，本结果仅含集思录与 A+H 数据"
+
         # 保荐人历史
         if brief and brief.get("sponsors"):
             sponsor = brief["sponsors"][0] if isinstance(brief["sponsors"], list) else str(brief["sponsors"])
@@ -400,7 +447,7 @@ def main():
                             "first_day_win_rate": round(first_day_rise / count * 100, 1) if count else None,
                         }
                         break
-            except (ImportError, KeyError, TypeError, ZeroDivisionError):
+            except Exception:
                 pass
         
         # A+H 折价
@@ -454,7 +501,6 @@ def main():
         
         ipos = fetch_margin_list()
         capital = profile.get("capital", 20000)
-        risk = profile.get("risk", "conservative")
         
         ipo_list = []
         for ipo in ipos:
@@ -502,7 +548,7 @@ def main():
     
     else:
         print(f"未知模块: {module}")
-        print(f"可用模块: aipo, jisilu, futu, tradesmart, allotment, ah, hkex, analyze, profile")
+        print("可用模块: aipo, jisilu, futu, tradesmart, allotment, ah, hkex, analyze, profile")
         sys.exit(1)
 
 

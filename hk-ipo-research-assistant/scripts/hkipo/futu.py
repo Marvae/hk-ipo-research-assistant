@@ -11,15 +11,14 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
-import httpx
 
 
 # 常量
 FUTU_IPO_URL = "https://www.futunn.com/quote/hk/ipo"
-USER_AGENT = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
+try:
+    from common import USER_AGENT, http_client
+except ImportError:  # 包模式（hkipo.*）且本目录不在 sys.path 时
+    from .common import USER_AGENT, http_client
 
 
 @dataclass
@@ -80,7 +79,9 @@ def _timestamp_to_date(timestamp_ms: int) -> str:
     if not timestamp_ms:
         return ""
     try:
-        dt = datetime.fromtimestamp(timestamp_ms / 1000)
+        # 富途返回秒级时间戳；兼容毫秒（>=1e11 视为毫秒）
+        seconds = timestamp_ms / 1000 if timestamp_ms >= 1e11 else timestamp_ms
+        dt = datetime.fromtimestamp(seconds)
         return dt.strftime("%Y-%m-%d")
     except (ValueError, OSError):
         return ""
@@ -113,7 +114,7 @@ def fetch_futu_listed_ipos(limit: int = 50) -> list[FutuListedIPO]:
         "Accept-Encoding": "gzip, deflate, br",
     }
     
-    response = httpx.get(FUTU_IPO_URL, headers=headers, timeout=30)
+    response = http_client().get(FUTU_IPO_URL, headers=headers, follow_redirects=False)
     response.raise_for_status()
     
     # 从 HTML 中提取 __INITIAL_STATE__ JSON
